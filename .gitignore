@@ -1,5 +1,5 @@
 .env
-verbdata/
+verbdata/1423686670221443224.json
 __pycache__/
 *.pyc
 *.pyo
@@ -9,5 +9,5 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
-venv/
+.venv/
 run.sh
