@@ -5,11 +5,17 @@ import json
 import random
 import math
 import asyncio
+import sys
 from dotenv import load_dotenv
 
 load_dotenv()
 token = os.getenv("TOKEN")
 GUILD_ID = int(os.getenv("GUILD_ID"))
+
+try:
+    ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID"))
+except (TypeError, ValueError):
+    ADMIN_USER_ID = None
 
 class Client(discord.Client):
     def __init__(self, *, intents: discord.Intents):
@@ -26,6 +32,15 @@ class Client(discord.Client):
 
         except Exception as e:
             print(f'error: {e}')
+
+    async def on_message(self, message):
+        if message.author == self.user:
+            return
+        if message.guild is None and ADMIN_USER_ID is not None:
+            if message.author.id == ADMIN_USER_ID:
+                if message.content.strip().lower() == "restart":
+                    await message.channel.send("收到，正在重啟...")
+                    sys.exit(0)
 
 guild = discord.Object(id=GUILD_ID)
 
