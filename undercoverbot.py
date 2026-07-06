@@ -259,7 +259,7 @@ class start_button(discord.ui.View):
 
     @discord.ui.button(label='白板模式', style=discord.ButtonStyle.grey)
     async def whiteboard(self, interaction, button):
-        if interaction.user.id not in guild_games[interaction.guild.id].players:
+        if interaction.user.id != guild_games[interaction.guild.id].holder:
             await interaction.response.send_message('你無法更改模式！', ephemeral=True)
 
         else:
@@ -371,6 +371,9 @@ class sample_button(discord.ui.Button):
 
         if voter_id in view.voted_users:
             await interaction.response.send_message('你已經投過票了！', ephemeral=True)
+            
+        elif voter_id not in guild_games[interaction.guild.id].players:
+            await interaction.response.send_message('你不在遊戲裡！', ephemeral=True)
 
         else:
             view.voted_users.add(voter_id)
@@ -470,6 +473,10 @@ async def undercover(interaction: discord.Interaction):
 
 @client.tree.command(name='臥底投票', description='選出你認為的臥底', guild=guild)
 async def vote(interaction: discord.Interaction):
+    if not guild_games[interaction.guild.id].On_playing:
+        await interaction.response.send_message('遊戲還沒開始！', ephemeral=True)
+        return
+    
     if not guild_games[interaction.guild.id].vote_active:
         guild_games[interaction.guild.id].vote_active = True
         vote_embed = discord.Embed(title='選出你認為的臥底')
