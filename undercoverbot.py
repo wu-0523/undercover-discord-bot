@@ -10,7 +10,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 token = os.getenv("TOKEN")
-GUILD_ID = int(os.getenv("GUILD_ID"))
+
+try:
+    GUILD_ID = int(os.getenv("GUILD_ID"))
+except:
+    GUILD_ID = None
 
 try:
     ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID"))
@@ -26,9 +30,9 @@ class Client(discord.Client):
         print(f'logged on as {self.user} !')
 
         try:
-            guild = discord.Object(id=GUILD_ID)
             synced = await self.tree.sync(guild=guild)
-            print(f'Synced {len(synced)} command to guild {guild.id}')
+            if GUILD_ID:
+                print(f'Synced {len(synced)} command to guild {guild.id}')
 
         except Exception as e:
             print(f'error: {e}')
@@ -42,13 +46,16 @@ class Client(discord.Client):
                     await message.channel.send("收到，正在重啟...")
                     sys.exit(0)
 
-guild = discord.Object(id=GUILD_ID)
+if GUILD_ID:
+    guild = discord.Object(id=GUILD_ID)
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
 client = Client(intents=intents)
+
+playing_server = {}
 
 undercover_player_dict = {}
 undercover_order_dict = {}
@@ -183,6 +190,16 @@ class start_button(discord.ui.View):
             await interaction.response.send_message('你無法開始遊戲！', ephemeral=True)
         
         else:
+            if not playing_server[interaction.guild.id]:
+                playing_server[interaction.guild.id] = {
+                    "playing": 1,
+                    "players": [],
+                    "spy": 0,
+                    "spy_word": '',
+                    "civilian_word": '',
+                    "vote": 0
+                }
+
             for child in self.children:
                 child.disabled = True
 
