@@ -402,7 +402,9 @@ class vote_button(discord.ui.View):
         await self.end_voting()
 
     async def end_voting(self):
-        if self.is_ended:
+        if self.is_ended or not guild_games[self.guild.id].vote_active:
+            for child in self.children:
+                child.disabled = True
             return
         
         self.is_ended = True
@@ -451,7 +453,6 @@ class vote_button(discord.ui.View):
             vote_result_embed.add_field(name='', value=f'<@{highest_voted_player[0]}>被淘汰了！', inline=False)
             continue_embed = player_embed(guild_games[self.guild.id].players)
             await self.channel.send(embeds=[vote_result_embed, continue_embed])
-            guild_games[self.guild.id].vote_active = False
 
 @client.tree.command(name='臥底', description='建立一個誰是臥底遊戲', guild=guild)
 async def undercover(interaction: discord.Interaction):
