@@ -7,8 +7,10 @@ import math
 import asyncio
 import sys
 from dotenv import load_dotenv
+from dataclasses import dataclass, field
+from typing import List, Dict
 
-load_dotenv()
+load_dotenv(override=True)
 token = os.getenv("TOKEN")
 
 try:
@@ -55,14 +57,18 @@ intents.members = True
 
 client = Client(intents=intents)
 
-playing_server = {}
+@dataclass
+class GameStatus:
+    On_playing: bool = False
+    players: list = field(default_factory=list)
+    holder: int = 0
+    spy: int = 0
+    spy_word: str = ''
+    civilian_word: str = ''
+    whiteboard_mode: bool = False
+    vote_active: bool = False
 
-undercover_player_dict = {}
-undercover_order_dict = {}
-undercover_spy_dict = {}
-undercover_whiteboard_dict = {}
-undercover_word_dict = {}
-vote_active_dict = {}
+guild_games: Dict[int, GameStatus] = {}
 
 def create_pages(page_num, interaction_guild_id):
     with open('verbdata/default.json', 'r', encoding='utf-8') as j:
@@ -150,10 +156,10 @@ class start_button(discord.ui.View):
     
     @discord.ui.button(label='加入', style=discord.ButtonStyle.blurple)
     async def join_button(self, interaction, button):
-        if interaction.user.id not in undercover_player_dict[interaction.guild.id]:
-            undercover_player_dict[interaction.guild.id].append(interaction.user.id)
+        if interaction.user.id not in guild_games[interaction.guild.id].players:
+            guild_games[interaction.guild.id].players.append(interaction.user.id)
             new_embed = interaction.message.embeds[0].copy()
-            new_str = '\n'.join(f'<@{pid}>' for pid in undercover_player_dict[interaction.guild.id])
+            new_str = '\n'.join(f'<@{pid}>' for pid in guild_games[interaction.guild.id].players)
             new_embed.set_field_at(1, name='玩家', value=new_str, inline=False)
             await interaction.response.edit_message(embed=new_embed)
         else:
@@ -161,24 +167,23 @@ class start_button(discord.ui.View):
     
     @discord.ui.button(label='離開', style=discord.ButtonStyle.red)
     async def leave_button(self, interaction, button):
-        if interaction.user.id in undercover_player_dict[interaction.guild.id]:
-            holder = undercover_player_dict[interaction.guild.id][0]
-            undercover_player_dict[interaction.guild.id].remove(interaction.user.id)
+        if interaction.user.id in guild_games[interaction.guild.id].players:
+            guild_games[interaction.guild.id].players.remove(interaction.user.id)
 
-            if not undercover_player_dict[interaction.guild.id]:
-                del undercover_player_dict[interaction.guild.id]
+            if not guild_games[interaction.guild.id].players:
                 new_embed = discord.Embed(title='遊戲已結束')
+                guild_games[interaction.guild.id] = GameStatus()
                 await interaction.response.edit_message(embed=new_embed, view=None)
 
-            elif interaction.user.id == holder:
+            elif interaction.user.id == guild_games[interaction.guild.id].holder:
                 new_embed = discord.Embed(title='遊戲已結束')
+                guild_games[interaction.guild.id] = GameStatus()
                 await interaction.response.edit_message(embed=new_embed, view=None)
-                await interaction.followup.send(f'因房主<@{holder}>離開遊戲，遊戲結束。', allowed_mentions=discord.AllowedMentions.none())
-                del undercover_player_dict[interaction.guild.id]
+                await interaction.followup.send(f'因房主<@{guild_games[interaction.guild.id].holder}>離開遊戲，遊戲結束。', allowed_mentions=discord.AllowedMentions.none())
 
             else:
                 new_embed = interaction.message.embeds[0].copy()
-                new_str = '\n'.join(f'<@{pid}>' for pid in undercover_player_dict[interaction.guild.id])
+                new_str = '\n'.join(f'<@{pid}>' for pid in guild_games[interaction.guild.id].players)
                 new_embed.set_field_at(1, name='玩家', value=new_str)
                 await interaction.response.edit_message(embed=new_embed)
         else:
@@ -186,30 +191,16 @@ class start_button(discord.ui.View):
 
     @discord.ui.button(label='開始遊戲', style=discord.ButtonStyle.blurple)
     async def start_button(self, interaction, button):
-        if interaction.user.id != undercover_player_dict[interaction.guild.id][0]:
+        if interaction.user.id != guild_games[interaction.guild.id].holder:
             await interaction.response.send_message('你無法開始遊戲！', ephemeral=True)
         
         else:
-            if not playing_server[interaction.guild.id]:
-                playing_server[interaction.guild.id] = {
-                    "playing": 1,
-                    "players": [],
-                    "spy": 0,
-                    "spy_word": '',
-                    "civilian_word": '',
-                    "vote": 0
-                }
-
             for child in self.children:
                 child.disabled = True
 
-            playerlist = undercover_player_dict[interaction.guild.id].copy()
-            random.shuffle(playerlist)
-
-            undercover_order_dict[interaction.guild.id] = playerlist
-            vote_active_dict[interaction.guild.id] = 0
+            random.shuffle(guild_games[interaction.guild.id].players)
             
-            playerembed = player_embed(undercover_order_dict[interaction.guild.id])
+            playerembed = player_embed(guild_games[interaction.guild.id].players)
             await interaction.response.send_message(embed=playerembed)
             await interaction.message.edit(view=self)
             with open('verbdata/default.json', 'r', encoding='utf-8') as j:
@@ -232,25 +223,23 @@ class start_button(discord.ui.View):
                 civilian = word2
                 spy = word1
 
-            undercover_word_dict[interaction.guild.id] = {'spy': spy, 'civilian': civilian}
+            guild_games[interaction.guild.id].spy_word, guild_games[interaction.guild.id].civilian_word = spy, civilian
 
-            spy_player = random.choice(undercover_player_dict[interaction.guild.id])
-            undercover_spy_dict[interaction.guild.id] = spy_player
+            guild_games[interaction.guild.id].spy = random.choice(guild_games[interaction.guild.id].players)
 
-            for player_id in undercover_player_dict[interaction.guild.id]:
+            for player_id in guild_games[interaction.guild.id].players:
                 member = await interaction.guild.fetch_member(player_id)
 
                 if member is not None:
-                    game_data = undercover_whiteboard_dict.get(interaction.guild.id)
-                    if not game_data:
-                        if player_id == spy_player:
+                    if not guild_games[interaction.guild.id].whiteboard_mode:
+                        if player_id == guild_games[interaction.guild.id].spy:
                             await dm_player(member, spy, 1)
 
                         else:
                             await dm_player(member, civilian, 0)
 
                     else:
-                        if player_id == spy_player:
+                        if player_id == guild_games[interaction.guild.id].spy:
                             await whiteboard_dm(member, spy)
 
                         else:
@@ -260,9 +249,9 @@ class start_button(discord.ui.View):
     
     @discord.ui.button(label='關閉遊戲', style=discord.ButtonStyle.grey)
     async def close_button(self, interaction, button):
-        if interaction.user.id == undercover_player_dict[interaction.guild.id][0]:
+        if interaction.user.id == guild_games[interaction.guild.id].holder:
             new_embed = discord.Embed(title='遊戲已結束')
-            del undercover_player_dict[interaction.guild.id]
+            guild_games[interaction.guild.id] = GameStatus()
             await interaction.response.edit_message(embed=new_embed, view=None)
         
         else:
@@ -270,11 +259,11 @@ class start_button(discord.ui.View):
 
     @discord.ui.button(label='白板模式', style=discord.ButtonStyle.grey)
     async def whiteboard(self, interaction, button):
-        if interaction.user.id not in undercover_player_dict[interaction.guild.id]:
+        if interaction.user.id not in guild_games[interaction.guild.id].players:
             await interaction.response.send_message('你無法更改模式！', ephemeral=True)
 
         else:
-            undercover_whiteboard_dict[interaction.guild.id] = 1
+            guild_games[interaction.guild.id].whiteboard_mode = True
             new_embed = interaction.message.embeds[0].copy()
             new_embed.set_footer(text='白板模式：開')
             button.disabled = True
@@ -283,11 +272,11 @@ class start_button(discord.ui.View):
 
     @discord.ui.button(label='一般模式', style=discord.ButtonStyle.grey)
     async def normal(self, interaction, button):
-        if interaction.user.id not in undercover_player_dict[interaction.guild.id]:
+        if interaction.user.id not in guild_games[interaction.guild.id].players:
             await interaction.response.send_message('你無法更改模式！', ephemeral=True)
 
         else:
-            undercover_whiteboard_dict[interaction.guild.id] = 0
+            guild_games[interaction.guild.id].whiteboard_mode = False
             new_embed = interaction.message.embeds[0].copy()
             new_embed.set_footer(text='白板模式：關')
             button.disabled = True
@@ -387,7 +376,7 @@ class sample_button(discord.ui.Button):
             view.voted_users.add(voter_id)
             view.votes[self.pid] += 1
             await interaction.response.send_message(f'你投給了{self.label}。', ephemeral=True)
-            if len(view.voted_users) == len(undercover_order_dict[view.guild.id]):
+            if len(view.voted_users) == len(guild_games[interaction.guild.id].players):
                 await view.end_voting()
 
 class vote_button(discord.ui.View):
@@ -409,7 +398,6 @@ class vote_button(discord.ui.View):
         await asyncio.sleep(seconds)
         await self.end_voting()
 
-
     async def end_voting(self):
         if self.is_ended:
             return
@@ -423,72 +411,70 @@ class vote_button(discord.ui.View):
         vote_result_embed = discord.Embed(title='投票結果')
         result = '\n'.join(f'<@{pid}>: {v}票' for pid, v in self.votes.items())
         vote_result_embed.add_field(name='', value=result)
-        
+        guild_games[self.guild.id].vote_active = False
+
         if len(highest_voted_player) > 1:
-            continue_embed = player_embed(undercover_order_dict[self.guild.id])
+            continue_embed = player_embed(guild_games[self.guild.id].players)
             await self.channel.send(embeds=[vote_result_embed, continue_embed])
-            vote_active_dict[self.guild.id] = 0
+            return
+        else:
+            guild_games[self.guild.id].players.remove(highest_voted_player[0])
 
-        #game over
-        elif highest_voted_player[0] == undercover_spy_dict[self.guild.id]:
-            spy = await self.guild.fetch_member(undercover_spy_dict[self.guild.id])
+        #civilian win
+        if highest_voted_player[0] == guild_games[self.guild.id].spy:
+            spy = await self.guild.fetch_member(guild_games[self.guild.id].spy)
             spy_name = spy.display_name
-            game_word = undercover_word_dict[self.guild.id]
-            spy_word = game_word['spy']
-            civilian_word = game_word['civilian']
+            spy_word = guild_games[self.guild.id].spy_word
+            civilian_word = guild_games[self.guild.id].civilian_word
             end_embed = civilian_victory(spy_name=spy_name, spy_word=spy_word, civilian_word=civilian_word)
-            del undercover_order_dict[self.guild.id]
-            del undercover_player_dict[self.guild.id]
-            del undercover_spy_dict[self.guild.id]
-            del undercover_word_dict[self.guild.id]
-            undercover_whiteboard_dict.pop(self.guild.id, None)
+            guild_games[self.guild.id] = GameStatus()
             await self.channel.send(embeds=[vote_result_embed, end_embed])
-            vote_active_dict.pop(self.guild.id, None)
 
-        #game over
-        elif highest_voted_player[0] in undercover_order_dict[self.guild.id] and len(undercover_order_dict[self.guild.id]) == 3 or len(undercover_order_dict[self.guild.id]) == 2:
-            undercover_order_dict[self.guild.id].remove(highest_voted_player[0])
-            spy = await self.guild.fetch_member(undercover_spy_dict[self.guild.id])
+        #spy win
+        elif len(guild_games[self.guild.id].players) == 2 and guild_games[self.guild.id].spy in guild_games[self.guild.id].players:
+            spy = await self.guild.fetch_member(guild_games[self.guild.id].spy)
             spy_name = spy.display_name
-            game_word = undercover_word_dict[self.guild.id]
-            spy_word = game_word['spy']
-            civilian_word = game_word['civilian']
+            spy_word = guild_games[self.guild.id].spy_word
+            civilian_word = guild_games[self.guild.id].civilian_word
             end_embed = spy_victory(spy_name=spy_name, spy_word=spy_word, civilian_word=civilian_word)
-            del undercover_order_dict[self.guild.id]
-            del undercover_player_dict[self.guild.id]
-            del undercover_spy_dict[self.guild.id]
-            del undercover_word_dict[self.guild.id]
-            undercover_whiteboard_dict.pop(self.guild.id, None)
+            guild_games[self.guild.id] = GameStatus()
             await self.channel.send(embeds=[vote_result_embed, end_embed])
-            vote_active_dict[self.guild.id] = 0
 
+        #game continue
         else:
             vote_result_embed = discord.Embed(title='投票結果')
             result = '\n'.join(f'<@{pid}>: {v}票' for pid, v in self.votes.items())
             vote_result_embed.add_field(name='', value=result, inline=False)
             vote_result_embed.add_field(name='', value=f'<@{highest_voted_player[0]}>被淘汰了！', inline=False)
-            undercover_order_dict[self.guild.id].remove(highest_voted_player[0])
-            continue_embed = player_embed(undercover_order_dict[self.guild.id])
+            continue_embed = player_embed(guild_games[self.guild.id].players)
             await self.channel.send(embeds=[vote_result_embed, continue_embed])
-            vote_active_dict[self.guild.id] = 0
+            guild_games[self.guild.id].vote_active = False
 
 @client.tree.command(name='臥底', description='建立一個誰是臥底遊戲', guild=guild)
 async def undercover(interaction: discord.Interaction):
-    undercover_player_dict[interaction.guild.id] = [interaction.user.id]
-    player_str = '\n'.join(f'<@{pid}>' for pid in undercover_player_dict[interaction.guild.id])
-    undercover_embed = discord.Embed(title="誰是臥底？")
-    undercover_embed.add_field(name='房主', value=interaction.user.name, inline=False)
-    undercover_embed.add_field(name='玩家', value=player_str, inline=False)
-    undercover_embed.set_footer(text='白板模式：關')
-    await interaction.response.send_message(embed=undercover_embed, view=start_button())
+    if interaction.guild.id in guild_games and guild_games[interaction.guild.id].On_playing:
+        await interaction.response.send_message('遊戲已經開始!', ephemeral=True)
+
+    else:
+        if interaction.guild.id not in guild_games:
+            guild_games[interaction.guild.id] = GameStatus()
+        guild_games[interaction.guild.id].On_playing = True
+        guild_games[interaction.guild.id].players.append(interaction.user.id)
+        guild_games[interaction.guild.id].holder = interaction.user.id
+        player_str = '\n'.join(f'<@{pid}>' for pid in guild_games[interaction.guild.id].players)
+        undercover_embed = discord.Embed(title="誰是臥底？")
+        undercover_embed.add_field(name='房主', value=interaction.user.name, inline=False)
+        undercover_embed.add_field(name='玩家', value=player_str, inline=False)
+        undercover_embed.set_footer(text='白板模式：關')
+        await interaction.response.send_message(embed=undercover_embed, view=start_button())
 
 @client.tree.command(name='臥底投票', description='選出你認為的臥底', guild=guild)
 async def vote(interaction: discord.Interaction):
-    if not vote_active_dict[interaction.guild.id]:
-        vote_active_dict[interaction.guild.id] = 1
+    if not guild_games[interaction.guild.id].vote_active:
+        guild_games[interaction.guild.id].vote_active = True
         vote_embed = discord.Embed(title='選出你認為的臥底')
-        vote_str = '\n'.join(f'<@{pid}>' for pid in undercover_order_dict[interaction.guild.id])
-        vote_view = vote_button(undercover_order_dict[interaction.guild.id], interaction.guild, interaction.channel)
+        vote_str = '\n'.join(f'<@{pid}>' for pid in guild_games[interaction.guild.id].players)
+        vote_view = vote_button(guild_games[interaction.guild.id].players, interaction.guild, interaction.channel)
         asyncio.create_task(vote_view.start_strict_timer(60))
         await interaction.response.send_message(embed=vote_embed, view=vote_view)
 
@@ -497,18 +483,14 @@ async def vote(interaction: discord.Interaction):
 
 @client.tree.command(name='結束臥底遊戲', description='結束目前的臥底遊戲', guild=guild)
 async def quit(interaction: discord.Interaction):
-    if interaction.guild.id not in undercover_order_dict:
+    if interaction.guild.id not in guild_games:
         await interaction.response.send_message('目前沒有臥底遊戲正在進行。', ephemeral=True)
 
-    elif interaction.user.id not in undercover_order_dict[interaction.guild.id]:
+    elif interaction.user.id not in guild_games[interaction.guild.id].players:
         await interaction.response.send_message('你不在遊戲內！', ephemeral=True)
 
     else:
-        del undercover_order_dict[interaction.guild.id]
-        del undercover_player_dict[interaction.guild.id]
-        del undercover_spy_dict[interaction.guild.id]
-        del undercover_word_dict[interaction.guild.id]
-        undercover_whiteboard_dict.pop(interaction.guild.id, None)
+        guild_games[interaction.guild.id] = GameStatus()
         await interaction.response.send_message('臥底遊戲已被強制結束。')
         
 @client.tree.command(name='查看詞彙列表', description='查看誰是臥底的詞彙列表', guild=guild)
