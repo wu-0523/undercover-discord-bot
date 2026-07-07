@@ -9,6 +9,7 @@ import sys
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
 from typing import List, Dict
+import sqlite3
 
 load_dotenv(override=True)
 token = os.getenv("TOKEN")
@@ -23,6 +24,11 @@ try:
 except (TypeError, ValueError):
     ADMIN_USER_ID = None
 
+if GUILD_ID:
+    guild = discord.Object(id=GUILD_ID)
+else:
+    guild = None
+
 class Client(discord.Client):
     def __init__(self, *, intents: discord.Intents):
         super().__init__(intents=intents)
@@ -32,9 +38,12 @@ class Client(discord.Client):
         print(f'logged on as {self.user} !')
 
         try:
-            synced = await self.tree.sync(guild=guild)
             if GUILD_ID:
+                synced = await self.tree.sync(guild=guild)
                 print(f'Synced {len(synced)} command to guild {guild.id}')
+            else:
+                synced = await self.tree.sync()
+                print('全域模式')
 
         except Exception as e:
             print(f'error: {e}')
@@ -47,9 +56,6 @@ class Client(discord.Client):
                 if message.content.strip().lower() == "restart":
                     await message.channel.send("收到，正在重啟...")
                     sys.exit(0)
-
-if GUILD_ID:
-    guild = discord.Object(id=GUILD_ID)
 
 intents = discord.Intents.default()
 intents.message_content = True
