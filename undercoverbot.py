@@ -9,7 +9,6 @@ import sys
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
 from typing import List, Dict
-import sqlite3
 
 load_dotenv(override=True)
 token = os.getenv("TOKEN")
@@ -208,7 +207,7 @@ class start_button(discord.ui.View):
             elif interaction.user.id == guild_games[interaction.guild.id].holder_id:
                 new_embed = discord.Embed(title='遊戲已結束')
                 await interaction.response.edit_message(embed=new_embed, view=None)
-                await interaction.followup.send(f'因房主<@{guild_games[interaction.guild.id].holder_id}>離開遊戲，遊戲結束。', allowed_mentions=discord.AllowedMentions.none())
+                await interaction.followup.send(f'因房主{guild_games[interaction.guild.id].players[0].display_name}離開遊戲，遊戲結束。')
                 guild_games[interaction.guild.id] = GameStatus()
 
             else:
